@@ -1,0 +1,31 @@
+[
+  {
+    "className": "org.mmonti.documentme.sample.SimpleRestController",
+    "methodName": "simplePost",
+    "path": "\"/post\"",
+    "method": "POST",
+    "comment": "Another Simpler POST Controller.",
+    "responseHeaders": {
+      "x-token": "User session token"
+    },
+    "responseStatus": {
+      "201": "Created",
+      "401": "Bad Request"
+    },
+    "returns": {
+      "type": "Object",
+      "description": "New Object created."
+    },
+    "pathParams": {
+      "\"name\"": "\"name\"",
+      "param": "a sample for path variables",
+      "parameter": "a sample for query parameter"
+    },
+    "queryParams": {
+      "\"age\"": "false"
+    },
+    "arguments": {
+      "parameters": "java.util.Map"
+    }
+  }
+]
