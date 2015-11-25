@@ -1,5 +1,9 @@
+bower_components
+node_modules
+
 *.iml
 *.ipr
+.tmp
 .idea
 *.class
 

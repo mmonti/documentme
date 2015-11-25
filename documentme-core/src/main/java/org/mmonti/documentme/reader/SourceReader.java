@@ -1,10 +1,13 @@
 package org.mmonti.documentme.reader;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thoughtworks.qdox.JavaProjectBuilder;
 import com.thoughtworks.qdox.Searcher;
 import com.thoughtworks.qdox.model.*;
 import com.thoughtworks.qdox.model.expression.AnnotationValue;
 import org.mmonti.documentme.model.Endpoint;
+import org.mmonti.documentme.model.Operation;
 import org.mmonti.documentme.model.Return;
 import org.mmonti.documentme.reader.parser.ParamDocletAnnotation;
 import org.mmonti.documentme.reader.parser.ReturnDocletAnnotation;
@@ -21,6 +24,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.aol.cyclops.matcher.builders.Matching.when;
+import static java.util.Optional.*;
 import static java.util.stream.Collectors.*;
 
 /**
@@ -40,6 +44,7 @@ public class SourceReader {
     public static final String CONST_ATTR_VALUE = "value";
     public static final String EMPTY = "";
     public static final String CONST_DOT = ".";
+    public static final String CONST_QUOTES = "\"";
 
     private JsonParser jsonParser = new JacksonJsonParser();
 
@@ -70,7 +75,7 @@ public class SourceReader {
         builder.addSourceTree(source);
 
         final Collection<JavaClass> classes = builder.search(currentClass -> currentClass.getPackage().getName().equals(sourcePattern));
-        this.endpointSet = classes.stream().map(currentClass -> readClassInfo(new HashSet(), currentClass)).collect(toSet());
+        this.endpointSet = classes.stream().map(currentClass -> readClassInfo(new Endpoint(), currentClass)).collect(toSet());
     }
 
     /**
@@ -78,47 +83,38 @@ public class SourceReader {
      * @param endpoint
      * @param javaClass
      */
-    private Set<Endpoint> readClassInfo(final Endpoint endpoint, final JavaClass javaClass) {
+    private Endpoint readClassInfo(final Endpoint endpoint, final JavaClass javaClass) {
         // = Class information.
         endpoint.setClassName(javaClass.getFullyQualifiedName());
 
         // = Class Annotation.
-        final Optional<JavaAnnotation> classAnnotation = javaClass.getAnnotations().stream().filter(current -> current.getType().getClass().equals(RequestMapping.class)).findFirst();
+        final Optional<JavaAnnotation> classAnnotation = javaClass.getAnnotations().stream().filter(annotation -> annotation.getType().getFullyQualifiedName().equals(RequestMapping.class.getCanonicalName())).findFirst();
         classAnnotation.ifPresent(annotation -> {
-            final AnnotationValue value = annotation.getProperty(CONST_VALUE);
-            endpoint.setBase(Optional.ofNullable(value.getParameterValue()).orElse(EMPTY).toString());
+            final Object value = annotation.getNamedParameter(CONST_VALUE);
+            endpoint.setBase(ofNullable(value.toString().replaceAll(CONST_QUOTES, EMPTY)).orElse(null));
         });
 
         // = Methods Information.
-        return javaClass.getMethods().stream().map(javaMethod -> readMethodInfo(new Endpoint(), javaMethod)).collect(toSet());
-    }
-
-    /**
-     *
-     * @param endpoint
-     * @param javaMethods
-     */
-    private Endpoint readMethodsInfo(final Endpoint endpoint, final List<JavaMethod> javaMethods) {
-        javaMethods.stream().map(javaMethod -> readMethodInfo(new Endpoint(), javaMethod)).collect(toSet());
+        endpoint.setOperations(javaClass.getMethods().stream().map(javaMethod -> readMethodInfo(new Operation(), javaMethod)).collect(toSet()));
 
         return endpoint;
     }
 
     /**
      *
-     * @param endpoint
+     * @param operation
      * @param javaMethod
      */
-    private Endpoint readMethodInfo(final Endpoint endpoint, final JavaMethod javaMethod) {
+    private Operation readMethodInfo(final Operation operation, final JavaMethod javaMethod) {
         // = Method information.
-        endpoint.setMethodName(javaMethod.getName());
+        operation.setMethodName(javaMethod.getName());
 
         // = Method Comments.
-        endpoint.setComment(javaMethod.getComment());
+        operation.setComment(javaMethod.getComment());
 
         // = Method parameters
         final List<JavaParameter> javaParameters = javaMethod.getParameters();
-        endpoint.setMethodParameters(javaParameters.stream().collect(toMap(
+        operation.setMethodParameters(javaParameters.stream().collect(toMap(
                 p -> p.getName(),
                 p -> p.getType().getFullyQualifiedName())
         ));
@@ -142,64 +138,53 @@ public class SourceReader {
                     Object methodParameterValue = method.getParameterValue();
                     String methodName = methodParameterValue.toString();
 
-                    Object parameterValue = value.getParameterValue();
-                    String parameterName = parameterValue.toString();
-
-                    endpoint.setMethod(RequestMethod.valueOf(methodName.substring(methodName.lastIndexOf(CONST_DOT)+1)));
-                    endpoint.setPath(parameterName);
+                    operation.setMethod(RequestMethod.valueOf(methodName.substring(methodName.lastIndexOf(CONST_DOT)+1)));
+                    operation.setPath(of(matchingAnnotation.getNamedParameter(CONST_VALUE).toString().replaceAll(CONST_QUOTES, EMPTY)).orElse(null));
                 }).
         when()
                 .isTrue((JavaAnnotation annotation) -> annotation.getType().getFullyQualifiedName().equals(PathVariable.class.getCanonicalName()))
                 .thenConsume(matchingAnnotation -> {
-                    final AnnotationValue value = matchingAnnotation.getProperty(CONST_VALUE);
-                    final Object parameterValue = value.getParameterValue();
-                    final String parameterName = parameterValue.toString();
-
-                    endpoint.addPathParam(parameterName, parameterName);
+                    final String parameterName = ofNullable(matchingAnnotation.getNamedParameter(CONST_VALUE).toString().replaceAll(CONST_QUOTES, EMPTY)).orElse(null);
+                    operation.addPathParam(parameterName,parameterName);
                 }).
         when()
                 .isTrue((JavaAnnotation annotation) -> annotation.getType().getFullyQualifiedName().equals(RequestParam.class.getCanonicalName()))
                 .thenConsume(matchingAnnotation -> {
-                    final AnnotationValue value = matchingAnnotation.getProperty(CONST_VALUE);
-                    final AnnotationValue required = matchingAnnotation.getProperty(CONST_ATTR_REQUIRED);
+                    final String value = Optional.ofNullable(matchingAnnotation.getNamedParameter(CONST_VALUE).toString().replaceAll(CONST_QUOTES, EMPTY)).orElse(null);
+                    final String required = Optional.ofNullable(matchingAnnotation.getNamedParameter(CONST_ATTR_REQUIRED).toString().replaceAll(CONST_QUOTES, EMPTY)).orElse(null);
 
-                    final Object parameterValue = value.getParameterValue();
-                    final String parameterName = parameterValue.toString();
-
-                    final Object requiredParameterValue = required.getParameterValue();
-                    final String requiredParameterName = requiredParameterValue.toString();
-
-                    endpoint.addQueryParam(parameterName, (requiredParameterName == null) ? Boolean.FALSE.toString() : requiredParameterName);
+                    operation.addQueryParam(value, (required== null) ? Boolean.FALSE.toString() : required);
                 })
                 .matchFromStream(annotations.stream()).collect(Collectors.toList());
 
+        // = JavaDoc
         when()
                 .isTrue((DocletTag tag) -> tag.getName().equals(DOCLET_RETURN))
                 .thenConsume(matchingTag -> {
                     final ReturnDocletAnnotation tag = new ReturnDocletAnnotation(matchingTag.getValue());
-                    endpoint.setReturns(new Return(tag.getParameter(), tag.getDescription()));
+                    operation.setReturns(new Return(tag.getParameter(), tag.getDescription()));
                 }).
         when()
                 .isTrue((DocletTag tag) -> tag.getName().equals(DOCLET_HEADERS))
                 .thenConsume(matchingTag -> {
                     final String headers = matchingTag.getValue();
-                    endpoint.setResponseHeaders(jsonParser.parseMap(headers));
+                    operation.setResponseHeaders(jsonParser.parseMap(headers));
                 }).
         when()
                 .isTrue((DocletTag tag) -> tag.getName().equals(DOCLET_PARAM))
                 .thenConsume(matchingTag -> {
                     final ParamDocletAnnotation annotation = new ParamDocletAnnotation(matchingTag.getValue());
-                    endpoint.addPathParam(annotation.getParameter(), annotation.getDescription());
+                    operation.addPathParam(annotation.getParameter(), annotation.getDescription());
                 }).
         when()
                 .isTrue((DocletTag tag) -> tag.getName().equals(DOCLET_RESPONSES))
                 .thenConsume(matchingTag -> {
                     final String responseStatus = matchingTag.getValue();
-                    endpoint.setResponseStatus(jsonParser.parseMap(responseStatus));
+                    operation.setResponseStatus(jsonParser.parseMap(responseStatus));
                 })
                 .matchFromStream(javaMethod.getTags().stream()).collect(Collectors.toList());
 
-        return endpoint;
+        return operation;
     }
 
     public String getSourcePattern() {
@@ -221,32 +206,12 @@ public class SourceReader {
         return endpointSet;
     }
 
-    public static void main(String[] args) {
-        String base = "/home/mmonti/Development/workspace/documentme/documentme-sample/src/main/java/";
+    public static void main(String[] args) throws JsonProcessingException {
+        String base = "/Users/mmonti/Development/workspace/documentme/documentme-sample/src/main/java/";
         String pattern = "**/sample/*.java";
         String packageStr = "org.mmonti.documentme.sample";
-//        final SourceReader reader = SourceReader.getInstance(base, pattern);
-//        final Set<Endpoint> endpointSet = reader.getEndpointSet();
-//
-//        try {
-//            System.out.println(new ObjectMapper().writeValueAsString(endpointSet));
-//        } catch (JsonProcessingException e) {
-//            e.printStackTrace();
-//        }
-
-//        new AntPathMatcher().match(pattern, base);
-
-        JavaProjectBuilder builder = new JavaProjectBuilder();
-
-        builder.addSourceTree( new File( base ) );
-        Collection<JavaClass> classes = builder.search(new Searcher() {
-            @Override
-            public boolean eval(JavaClass javaClass) {
-                return javaClass.getPackage().getName().equals(packageStr);
-            }
-        });
-        for (JavaClass aClass : builder.getClasses()) {
-            System.out.println(aClass.getMethods());
-        }
+        final SourceReader reader = SourceReader.getInstance(base, packageStr);
+        final Set<Endpoint> endpointSet = reader.getEndpointSet();
+        System.out.println(new ObjectMapper().writeValueAsString(endpointSet));
     }
 }

@@ -1,7 +1,11 @@
 package org.mmonti.documentme;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.PrettyPrinter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationConfig;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.ser.std.JsonValueSerializer;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -33,18 +37,18 @@ public class DocumentMePlugin extends AbstractMojo {
      * @throws MojoExecutionException
      */
     public void execute() throws MojoExecutionException {
-        getLog().info("basedir=[" + this.getBasedir().getAbsolutePath() +"]");
-        getLog().info("basedir=[" + this.getOutput().getAbsolutePath() +"]");
-        getLog().info("pattern=[" + this.getPattern() +"]");
+        getLog().info("source-dir=[" + this.getBasedir().getAbsolutePath() +"]");
+        getLog().info("output=[" + this.getOutput().getAbsolutePath() +"]");
+        getLog().info("package=[" + this.getPattern() +"]");
 
         final SourceReader reader = SourceReader.getInstance(this.getBasedir(), this.getPattern());
-        getLog().info("Reader has been created");
+        getLog().debug("Reader has been created");
 
         final Set<Endpoint> endpointSet = reader.getEndpointSet();
-        getLog().info("Endpoints found=[" + endpointSet.size() +"]");
+        getLog().info("Classes found=[" + endpointSet.size() +"]");
 
         try {
-            File output = getOutput();
+            final File output = getOutput();
             if (!output.exists()) {
                 if (output.getParentFile().mkdirs()) {
                     getLog().info("Folder/File created");
@@ -53,8 +57,11 @@ public class DocumentMePlugin extends AbstractMojo {
                 }
             }
 
-            new ObjectMapper().writeValue(getOutput(), endpointSet);
-            getLog().info("File written=[" + getOutput().getAbsolutePath() +"]");
+            final ObjectMapper mapper = new ObjectMapper();
+            mapper.enable(SerializationFeature.INDENT_OUTPUT);
+            mapper.writeValue(getOutput(), endpointSet);
+
+            getLog().info("File written @ [" + getOutput().getAbsolutePath() +"]");
 
         } catch (JsonProcessingException e) {
             getLog().debug(e);

@@ -63,15 +63,14 @@
 				<version>0.0.1-SNAPSHOT</version>
 				<executions>
 					<execution>
-						<phase>process-classes</phase>
+						<phase>process-sources</phase>
 						<goals>
 							<goal>document</goal>
 						</goals>
 						<configuration>
-							<basedir>/home/mmonti/Development/workspace/documentme/documentme-sample/src/main/java/</basedir>
-							<!--<pattern>**/sample/*.java</pattern>-->
+							<basedir>/Users/mmonti/Development/workspace/documentme/documentme-sample/src/main/java/</basedir>
 							<pattern>org.mmonti.documentme.sample</pattern>
-							<output>/home/mmonti/Development/workspace/documentme/documentme-sample/src/main/resources/endpoints.json</output>
+							<output>/Users/mmonti/Development/workspace/documentme/documentme-sample/src/main/resources/endpoints.json</output>
 						</configuration>
 					</execution>
 				</executions>
